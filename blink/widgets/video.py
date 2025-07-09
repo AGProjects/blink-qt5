@@ -1,4 +1,4 @@
-
+import platform
 
 
 from PyQt5.QtCore import Qt, QMetaObject, QPoint, QRect, QTimer, pyqtSignal
@@ -14,6 +14,9 @@ from blink.resources import Resources
 
 
 __all__ = ['VideoSurface']
+
+if platform.system() == 'Darwin':
+    import numpy as np
 
 
 class Container(object):
@@ -101,8 +104,25 @@ class VideoSurface(QWidget):
         self._renderer.close()
         del self._renderer
 
+    def convert_argb_to_bgra(self, data: bytes, width: int, height: int) -> bytes:
+        expected_size = width * height * 4
+        actual_size = len(data)
+
+        if actual_size < expected_size:
+            raise ValueError(f"Buffer too small: got {actual_size} bytes, expected {expected_size}")
+        elif actual_size > expected_size:
+            data = data[:expected_size]  # Trim the buffer if too large
+
+        arr = np.frombuffer(data, dtype=np.uint8).reshape((height, width, 4))
+        bgra = arr[..., [3, 2, 1, 0]]
+        return bgra.tobytes()
+
     def _handle_frame(self, frame):
-        self._image = QImage(frame.data, frame.width, frame.height, QImage.Format.Format_ARGB32)
+        if platform.system() == 'Darwin':
+            data = self.convert_argb_to_bgra(frame.data, frame.width, frame.height)
+        else:
+            data = frame.data
+        self._image = QImage(data, frame.width, frame.height, frame.width * 4, QImage.Format.Format_ARGB32).copy()
         if self._clock is None:
             QMetaObject.invokeMethod(self, 'update', Qt.ConnectionType.QueuedConnection)
 
